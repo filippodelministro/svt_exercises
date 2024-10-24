@@ -6,6 +6,7 @@ type pkey.	(* public key *)
 type skey.	(* private key *)
 type keymat.	(* key material *)
 type result.	(* result of check signature *)
+type nonce.
 
 free c:channel.			(* the public channel *)
 free s:bitstring [private]. 	(* the secret *)
@@ -26,6 +27,8 @@ reduc forall m:bitstring, y:keymat; checksign(sign(m,sk(y)), pk(y)) = ok().
 fun senc(bitstring, bitstring): bitstring.
 reduc forall x: bitstring, y: bitstring; sdec(senc(x,y),y) = x.
 
+(* Nonce checks *)
+fun n2b(nonce): bitstring.
 
 (* Test whether s is secret *)
 query attacker(s).
@@ -37,26 +40,31 @@ query event(endA()).
 query event(endB()).
 
 (* Test authentication *)
-event bA(pkey,pkey,bitstring).
-event eB(pkey,pkey,bitstring).
-query x:pkey,y:pkey,z:bitstring; inj-event(eB(x,y,z)) ==> inj-event(bA(x,y,z)).
+event bA(pkey,pkey,bitstring,nonce).
+event eB(pkey,pkey,bitstring,nonce).
+query x:pkey,y:pkey,z:bitstring,w:nonce; inj-event(eB(x,y,z,w)) ==> inj-event(bA(x,y,z,w)).
+
 
 (* The process *)
 
 let pA(kpA: keymat, pkB: pkey) =
+         in(c, nB:nonce); 
          new k:bitstring;
-	 event bA(pk(kpA),pkB,k);
-         out(c, penc(sign(k, sk(kpA)), pkB));
+	 event bA(pk(kpA),pkB,k,nB);
+         out(c, penc(sign((k,nB), sk(kpA)), pkB));
  	 in(c,x:bitstring);
          let xs=sdec(x, k) in 
          event endA(); 0. 
 
 let pB(kpB: keymat, pkA: pkey) =
+         new nB:nonce;
+         out(c, nB);
          in(c, y:bitstring); 
          let y1=pdec(y, sk(kpB)) in
          if checksign(y1, pkA)=ok() then
-         let xk=getmess(y1) in
-	 event eB(pkA,pk(kpB),xk);
+         let (xk:bitstring,nB':nonce)=getmess(y1) in
+         if(nB'=nB) then 
+	 event eB(pkA,pk(kpB),xk, nB);
          out(c, senc(s, xk)); 
 	 event endB(); 0. 
 
@@ -67,7 +75,6 @@ process
          )
 
 
-(*Dai eh Diego...*)
 (* EXPECTPV
 Query not attacker(s[]) is true.
 Query not event(endA) is false.
